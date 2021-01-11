@@ -1,0 +1,1 @@
+ffmpeg -i banner.mp4 -b 700k -filter:v "crop=1920:500:1920:500" -c:a copy out.mp4
