@@ -1,0 +1,235 @@
+<!DOCTYPE HTML>
+<!--
+	Industrious by TEMPLATED
+	templated.co @templatedco
+	Released for free under the Creative Commons Attribution 3.0 license (templated.co/license)
+-->
+<html>
+	<head>
+		<title>Quicky Projects - BLE - Android Thermal Camera</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+		<meta name="description" content="" />
+		<meta name="keywords" content="" />
+		<link rel="stylesheet" href="assets/css/main.css" />
+	</head>
+	<body class="is-preload">
+
+		<!-- Header -->
+			<header id="header">
+				<a class="logo" href="index.html">Back to site</a>
+				<nav>
+					<a href="#menu">Menu</a>
+				</nav>
+			</header>
+
+		<!-- Nav -->
+			<nav id="menu">
+				<ul class="links">
+					<li><a href="index.html">Home</a></li>
+				</ul>
+			</nav>
+
+		<!-- Heading -->
+			<div id="heading" >
+				<h1>Quick Guide: ESP32 BLE enabled Thermal Camera</h1>
+			</div>
+
+		<!-- Main -->
+			<section id="main" class="wrapper">
+				<div class="inner">
+					<div class="content">
+						<header>
+							<h2>Did I leave the stove on?</h2>
+						</header>
+						<p>
+						<p>Unfortunately, like most developers I find myself having an absent mind - I never know if I left
+							the stove on when I leave my house. I decided to spend a few days creating a thermal IOT camera to solve this problem.
+							Ideally the easiest way to approach this is to put a current transformer on the line feeding the stove,
+							but given that my stove is heavy and I don't want to move it, I decided to use a cheap thermal camera mounted on 
+							top of my stove to get a real-time thermal image. </p>
+
+							<p> There are Four ingredients required to make this work </p>
+							<ul>
+								<li>ESP32</li>
+								<li>AMG8831 (thermal camera)</li>
+								<li>Golang backend</li>
+								<li>Android app</li>
+							  </ul> 
+
+							<p> From a top level, this brief guide explains how to make an Android APP that lets me see in real time what's happening on my stove via 
+								a thermal camera - from anywhere in the world - I want to do this as cheaply as possible, and I want to make it scalable. 
+							</p>
+
+							<p> Ideally we want to do as little provisioning at the factory as possible. Also, Ideally, we want the system to be "interrupt"
+								driven. If I leave my house with the stove on - I want the system to inform me - I don't want to check. Since this is meant to be
+								quick project - I decided to implement a reasonable provisioning system while ignoring the later issue and letting the user (me)
+								poll to see if the stove is on.
+							</p>
+
+							<h3><b> Results </h3></b>
+
+							<p>Thermal Image, Stove Off:</p>
+							<img src="./blog/off-stove.png" alt="off-stove" class="center">
+
+							<p>Thermal Image, Stove On:</p>
+							<img src="./blog/on-stove.png" alt="off-stove" class="center">
+
+
+							<h3><b> BLE Scanning </h3></b>
+
+							<p> Unfortunately, try as we might, we cannot completely avoid provisioning the device at the factory - however, we can minimize it. Imagine we have
+								two different fire sensors in our house - how do we differentiate them? We have no choice, we need to imprint a serial key of some sorts in the devices
+								memory at the factory.
+
+								To this end, I took advantage of the Advertising Manufacturer Specific Data we can embed in the BLE advertising packet. The first two bytes of this field are 
+								fixed to a random (but known) value, the rest is a unique serial number. In the App, we will utilize this value to uniquely identify 
+								our devices(s).
+							</p>
+
+							<p>
+								For example, here I set up two devices, with the serials A1C and A1B, doing a BLE scan (and filtering for my Manufacturer ID), we get the following
+              </p>	
+                <br>
+                <img src="./blog/two.png" alt="./blog/two.png" class="center">
+                <br>
+							<h3><b> Provisioning </h3></b>
+
+							<p>First, what do we mean by provisioning the device? Essentially, using our phone (through BLE) we want to transfer WiFi and API-key credentials
+								to the ESP32. Not doing this would mean we would have to either cook the credentials into the device or alternatively provide a keypad or some
+								other interface on the device for the user to enter the API-key and the WiFi credentials, which is obviously bad design.
+							</p>
+
+							<p> To quickly get this up and running, I leveraged the gatts_table_demo, which comes as part of the ESP-IDF</p>
+						
+              <br>
+							<img src="./blog/ble.png" alt="ble" class="center">
+              <br>
+
+							<p> We can see that we expose a very simple GATTS table, with only 2 attribute values. </p>
+							<ul>
+								<li>Handle (N + 2), Provision chunk (wifi SSID name, wifi SSID password, API key)</li>
+								<li>Handle (N + 4), Status (WiFI status, provision status)</li>
+							</ul> 
+
+							<p> Here Handle N+1 describes handle N+2, and likewise handle N+3 describes handle N+4. We will use the provision handle, using an app, to supply the ESP32 
+								both the WiFi credentials and also an API key to use against the backend. In the esp FW, we want to make sure we set the flag in the table such that when 
+								the smartphone dose a BLE read/write we don't automatically respond, instead a callback will be generated with the appropriate handle value and we can 
+							  chose what action we take, for example, when reading handle (N+4), we will check the WiFi status and also the NVS to see if we are already provisioned.
+							</p>
+
+							<p> One thing to note is that we deliberately kept the GATT table small and give multiple meanings to each value. This somewhat complicates the code, however,
+								it goes a long way to avoid the situation where the device has a valid SSID name, but is missing an API key, etc. We can insure wholesale provisioning 
+								of the device in this fashion. To stress this, after combining the three attributes, they are protected by a CRC. After doing this, they are written to the ESP32
+								through the PROVISION attribute (handle N+2). The ESP32 verifies the CRC before committing the values to NVS.
+							</p>
+
+							<p> To track the status of the device, we will poll attribute with the handle N+4, this is the status attribute, it's only two bits. The first bit contains a flag if
+								the device is provisioned, the second bit contains a flag if the device has connected to WiFi.
+							</p>
+ 
+              <br>
+							<img src="./blog/provision_screen.png" alt="provision" class="center">
+              <br>
+
+							<p>Once the user scans for and selects the device to provision, a new page shows up. Here, the user can enter the WiFi credentials as well as his or her email.
+							This will kick off a process that ultimately ends in the device being provisioned. </p>
+
+              <br>
+							<img src="./blog/provision_full.png" alt="provision" class="center">
+              <br>
+
+							<p> For provisioning, the back end exposes two URIs, provision_start and provision_finalize. To leverage proper REST API usage, the provision sequence
+								is broken up into two distinct actions. First, The smart-phone generates a random 32 character token and POSTs this to provision_start. This kicks off a process 
+								in the back-end in which a new API key is temporarily generated. If within the next 30 seconds a GET is made to the provision_finalize URI using the same token, the API key is 
+								finalized and stored in a database in the back-end and also returned to the smart phone.
+							</p>
+
+							<p> The smart phone now uses BLE to transfer the: 
+							<ul>
+								<li>WiFi SSID (name)</li>
+								<li>WiFi Password </li>
+								<li>API-key</li>
+							</ul> 
+
+							to the device. Once the device processes the BLE write, it too will then write the credentials to it's own NVS. Once this is done, finally,
+							the smart-phone will also store the API key in it's NVS. It will use this key to poll for new images</p>
+
+              <br>
+							<img src="./blog/esp32_store.png" alt="provision" class="center">
+              <br>
+
+              
+							<p>The ESP32 has fairly basic FW - it simply takes a thermal capture every few minutes and POSTs it to the cloud (backend). The data is sent as a raw binary.
+							</p>
+
+              <br>
+							<img src="./blog/back_end.png" alt="provision" class="center">
+              <br>
+
+							<p> To poll and request a new image, the smartphone first needs to fetch the API key stored in the shared preferences. Once it does this, it dispatches a 
+								GET request to the image creation URI on the back end. The back end goes and retrieves the latest thermal capture which is stored as raw data and generates an image using 
+								some very basic math, this image is returned to the phone which finally displays it.
+							</p>
+
+              <br>
+              <img src="./blog/schematic.png" alt="provision" class="center">
+							
+              <br>
+							<p>The schematic is shown above - straight forward as can be.</p>
+
+              <h3> Sources: </h3>
+              <a href="https://github.com/m0sf3tz/ble.git"> GitHub: Firmware + backend</a> <br>
+              <a href="https://github.com/m0sf3tz/ble-app"> GitHub: Andriod App</a>
+					</div>
+				</div>
+			</section>
+
+      <!-- Footer -->
+			<footer id="footer">
+				<div class="inner">
+					<div class="content">
+						<section>
+							<h3>About us</h3>
+							<p> TeraHelion is an industrial and consumer IoT consulting and technology company. The focus is to deliver complete sensor 
+              to cloud solutions for intelligent data analytics and predictive analysis. Our goal is to unite the existing industry with the Industry 4.0 technology
+              in order to increase efficiency and reduce costs/waste.
+              </br>
+              </br>
+              We are based in Vancouver BC.
+              </p>
+						</section>
+						<section>
+							<h4>Links</h4>
+							<ul class="alt">
+								<li><a href="#">Current Job Oppenings</a></li>
+								<li><a href="#">Testimonials</a></li>
+								<li><a href="#">Portfolio</a></li>
+								<li><a href="#">Blog.</a></li>
+							</ul>
+						</section>
+						<section>
+							<h4>Media</h4>
+							<ul class="plain">
+								<li><a href="#"><i class="icon fa-twitter">&nbsp;</i>Twitter</a></li>
+								<li><a href="#"><i class="icon fa-facebook">&nbsp;</i>Facebook</a></li>
+								<li><a href="#"><i class="icon fa-instagram">&nbsp;</i>Instagram</a></li>
+								<li><a href="#"><i class="icon fa-github">&nbsp;</i>Github</a></li>
+							</ul>
+						</section>
+					</div>
+					<div class="copyright">
+						&copy; TeraHelion Solutions.
+					</div>
+				</div>
+			</footer>
+
+		<!-- Scripts -->
+			<script src="assets/js/jquery.min.js"></script>
+			<script src="assets/js/browser.min.js"></script>
+			<script src="assets/js/breakpoints.min.js"></script>
+			<script src="assets/js/util.js"></script>
+			<script src="assets/js/main.js"></script>
+
+	</body>
+</html>
